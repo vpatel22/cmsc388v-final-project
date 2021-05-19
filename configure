@@ -1,0 +1,87 @@
+#!/bin/sh
+
+die() {
+  printf "error: %s\n" "$1"
+  exit 1
+}
+
+upcs() {
+  echo "$1" | tr 'a-z' 'A-Z'
+}
+
+check_pc() {
+  printf "checking for pkg-config..."
+  if command -v pkg-config >/dev/null; then
+    echo yes
+  else
+    echo no
+    die "pkg-config not found."
+  fi
+}
+
+check_ma() {
+  printf "current system: "
+  case "$(uname)" in
+    Darwin)
+      echo "macos"
+      ;;
+    CYGWIN*|MINGW*|MSYS*)
+      echo "windows"
+      ;;
+    Linux)
+      echo "linux"
+      MA_LDLIBS="-ldl -lpthread -lm"
+      ;;
+    *)
+      echo "unknown"
+      echo "  system defaults to BSD."
+      MA_LDLIBS="-lpthread -lm"
+      ;;
+  esac
+
+  cat <<EOF >> config.mk
+MA_LDLIBS = ${MA_LDLIBS}
+EOF
+}
+
+check_jack() {
+  printf "checking for jack..."
+  if pkg-config jack; then
+    echo "yes"
+    JACK_BINS="pitch"
+    JACK_CFLAGS=$(pkg-config --cflags jack)
+    JACK_LDLIBS=$(pkg-config --libs jack)
+  else
+    echo "no"
+    echo "  jack backend will not be built."
+  fi
+  cat <<EOF >> config.mk
+JACK_CFLAGS=${JACK_CFLAGS}
+JACK_LDLIBS=${JACK_LDLIBS}
+JACK_BINS=${JACK_BINS}
+EOF
+}
+
+check_pkg() {
+  name=$1
+  pkg=${2:-$1}
+  printf "checking for %s..." "$name"
+  if pkg-config "$pkg" 2>/dev/null; then
+    echo yes
+  else
+    echo no
+    die "${name} not found."
+  fi
+  cat <<EOF >> config.mk
+$(upcs "$name")_CFLAGS=$(pkg-config --cflags "$pkg")
+$(upcs "$name")_LDLIBS=$(pkg-config --libs "$pkg")
+EOF
+}
+
+check_pc
+
+:> config.mk
+check_jack
+check_pkg sdl sdl2
+check_pkg fftw fftw3f
+check_ma
